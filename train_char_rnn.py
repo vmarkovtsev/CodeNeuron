@@ -2,6 +2,8 @@ import argparse
 from collections import defaultdict
 import gzip
 import logging
+import os
+import random
 import sys
 from typing import List, Tuple, Dict
 
@@ -30,13 +32,18 @@ def setup():
                         help="Optimizer to apply.")
     parser.add_argument("--dropout", type=float, default=0, help="Dropout ratio.")
     parser.add_argument("--lr", default=0.01, type=float, help="Learning rate.")
+    parser.add_argument("--seed", type=int, default=7, help="Random seed.")
     parser.add_argument("--tensorboard", default="tb_logs",
                         help="TensorBoard output logs directory.")
     logging.basicConfig(level=logging.INFO)
-    return parser.parse_args()
+    args = parser.parse_args()
+    numpy.random.seed(args.seed)
+    random.seed(args.seed)
+    return args
 
 
-def read_dataset(path: str, analyze_chars: bool) -> Tuple[List[str], Dict[str, List[int]]]:
+def read_dataset(path: str, clean_code: bool, analyze_chars: bool) \
+        -> Tuple[List[str], Dict[str, List[int]]]:
     log = logging.getLogger("reader")
     texts = []
     bufsize = 1 << 20
@@ -51,6 +58,8 @@ def read_dataset(path: str, analyze_chars: bool) -> Tuple[List[str], Dict[str, L
             index = len(texts)
             for c in sorted(set(text)):
                 chars[c].append(index)
+        if clean_code:
+           text = text.replace("\x02", "").replace("\x03", "")
         texts.append(text)
 
     with gzip.open(path) as gzf:
@@ -84,6 +93,8 @@ def read_dataset(path: str, analyze_chars: bool) -> Tuple[List[str], Dict[str, L
 
 def create_char_rnn_model(args: argparse.Namespace):
     # late import prevent from loading Tensorflow too soon
+    import tensorflow as tf
+    tf.set_random_seed(args.seed)
     from keras import layers, models, initializers, optimizers
     log = logging.getLogger("model")
 
@@ -106,7 +117,9 @@ def create_char_rnn_model(args: argparse.Namespace):
     reverse_input, reverse_output = add_rnn()
     merged = layers.Concatenate()([forward_output, reverse_output])
     log.info("Added %s", merged)
-    decision = layers.Dense(len(CHARS) + 1, activation="softmax")(merged)
+    normer = layers.BatchNormalization()(merged)
+    log.info("Added %s", normer)
+    decision = layers.Dense(len(CHARS) + 1, activation="softmax")(normer)
     log.info("Added %s", decision)
     model = models.Model(inputs=[forward_input, reverse_input], outputs=[decision])
     optimizer = getattr(optimizers, args.optimizer)(lr=args.lr)
@@ -122,9 +135,7 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
     if args.length % 2 != 0:
         raise ValueError("--length must be even")
     log = logging.getLogger("train")
-    tensorboard = callbacks.TensorBoard(log_dir=args.tensorboard, histogram_freq=1)
-
-    numpy.random.seed(7)
+    numpy.random.seed(args.seed)
     log.info("Splitting into validation and train...")
     valid_doc_indices = set(numpy.random.choice(
         numpy.arange(len(dataset)), int(len(dataset) * args.validation), replace=False))
@@ -133,7 +144,6 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
     valid_docs = [dataset[i] for i in sorted(valid_doc_indices)]
 
     # we cannot reach first l / 2 (forward) and last l / 2 (backward)
-    # this is still a little bit imprecise - we count \x02 and \x03 which mark the code boundaries
     valid_size = sum(len(text) - args.length for text in valid_docs)
     train_size = sum(len(text) - args.length for text in train_docs)
     log.info("train samples: %d\tvalidation samples: %d\t~%.3f",
@@ -145,7 +155,7 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
             pos = 0
             self.index = index = numpy.zeros(len(texts) + 1, dtype=numpy.int32)
             for i, text in enumerate(texts):
-                pos += len(text) - text.count("\x02") - text.count("\x03") - args.length
+                pos += len(text) - args.length
                 index[i + 1] = pos
             # this takes much memory but is the best we can do.
             self.batches = numpy.arange(pos, dtype=numpy.uint32)
@@ -160,33 +170,23 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
             batch = ([numpy.zeros((args.batch_size, args.length), dtype=numpy.uint8)
                       for _ in range(2)],
                      [numpy.zeros((args.batch_size, len(CHARS) + 1), dtype=numpy.float32)])
-            text_indices = numpy.searchsorted(self.index, centers) - 1
+            text_indices = numpy.searchsorted(self.index, centers + 0.5) - 1
             for bi, (center, text_index) in enumerate(zip(centers, text_indices)):
                 text = self.texts[text_index]
-                target = center - self.index[text_index]
-                for x, c in enumerate(text[args.length // 2:]):
-                    if c != "\x02" and c != "\x03":
-                        target -= 1
-                        if target == 0:
-                            break
-                text_i = x - 1
-                batch_i = args.batch_size - 1
-                while text_i >= 0 and batch_i >= 0:
-                    c = text[text_i]
+                x = center - self.index[text_index]
+                assert 0 <= x < self.index[text_index + 1] - self.index[text_index]
+                text_i = x
+                batch_i = args.length
+                while text_i > 0 and batch_i > 0:
                     text_i -= 1
-                    if c == "\x02" or c == "\x03":
-                        continue
-                    batch[0][0][bi][batch_i] = CHARS.get(c, len(CHARS))
                     batch_i -= 1
-                text_i = x + 1
-                batch_i = args.batch_size - 1
-                while text_i < len(text) and batch_i >= 0:
-                    c = text[text_i]
+                    batch[0][0][bi][batch_i] = CHARS.get(text[text_i], len(CHARS))
+                text_i = x
+                batch_i = args.length
+                while text_i < len(text) - 1 and batch_i > 0:
                     text_i += 1
-                    if c == "\x02" or c == "\x03":
-                        continue
-                    batch[0][1][bi][batch_i] = CHARS.get(c, len(CHARS))
                     batch_i -= 1
+                    batch[0][1][bi][batch_i] = CHARS.get(text[text_i], len(CHARS))
                 batch[1][0][bi][CHARS.get(text[x], len(CHARS))] = 1
             return batch
 
@@ -195,19 +195,23 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
     log.info("Creating the validation feeder")
     valid_feeder = Feeder(valid_docs)
     log.info("model.fit_generator")
+    tensorboard = callbacks.TensorBoard(log_dir=args.tensorboard)
+    checkpoint = callbacks.ModelCheckpoint(
+        os.path.join(args.tensorboard, "checkpoint_{epoch:02d}_{val_loss:.3f}.hdf5"),
+        save_best_only=True)
     model.fit_generator(generator=train_feeder,
                         validation_data=valid_feeder,
                         validation_steps=len(valid_feeder),
                         steps_per_epoch=len(train_feeder),
                         epochs=args.epochs,
                         class_weight=[v for (c, v) in sorted(WEIGHTS.items())] + [OOV_WEIGHT],
-                        callbacks=[tensorboard],
+                        callbacks=[tensorboard, checkpoint],
                         use_multiprocessing=True)
 
 
 def main():
     args = setup()
-    dataset, _ = read_dataset(args.input, False)
+    dataset, _ = read_dataset(args.input, True, False)
     model_char = create_char_rnn_model(args)
     train_char_rnn_model(model_char, dataset, args)
 
