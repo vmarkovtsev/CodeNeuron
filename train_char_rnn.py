@@ -32,7 +32,10 @@ def setup():
                         help="Optimizer to apply.")
     parser.add_argument("--dropout", type=float, default=0, help="Dropout ratio.")
     parser.add_argument("--lr", default=0.01, type=float, help="Learning rate.")
+    parser.add_argument("--disable-weights", action="store_true",
+                        help="Do not weight char classes.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
+    parser.add_argument("--devices", default="0,1", help="Devices to use.")
     parser.add_argument("--tensorboard", default="tb_logs",
                         help="TensorBoard output logs directory.")
     logging.basicConfig(level=logging.INFO)
@@ -42,7 +45,7 @@ def setup():
     return args
 
 
-def read_dataset(path: str, clean_code: bool, analyze_chars: bool) \
+def read_dataset(path: str, min_length: int, clean_code: bool, analyze_chars: bool) \
         -> Tuple[List[str], Dict[str, List[int]]]:
     log = logging.getLogger("reader")
     texts = []
@@ -60,7 +63,8 @@ def read_dataset(path: str, clean_code: bool, analyze_chars: bool) \
                 chars[c].append(index)
         if clean_code:
            text = text.replace("\x02", "").replace("\x03", "")
-        texts.append(text)
+        if len(text) >= min_length:
+            texts.append(text)
 
     with gzip.open(path) as gzf:
         size = gzf.readinto(read_buffer)
@@ -95,36 +99,45 @@ def create_char_rnn_model(args: argparse.Namespace):
     # late import prevent from loading Tensorflow too soon
     import tensorflow as tf
     tf.set_random_seed(args.seed)
-    from keras import layers, models, initializers, optimizers
+    from keras import layers, models, initializers, optimizers, backend, metrics
     log = logging.getLogger("model")
+    dev1, dev2 = args.devices.split(",")
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    backend.tensorflow_backend.set_session(tf.Session(config=config))
 
-    def add_rnn():
-        input = layers.Input(batch_shape=(args.batch_size, args.length), dtype="uint8")
-        log.info("Added %s", input)
-        embedding = layers.Embedding(
-            200, 200, embeddings_initializer=initializers.Identity(), trainable=False)(input)
-        log.info("Added %s", embedding)
-        layer = embedding
-        layer_sizes = [int(n) for n in args.layers.split(",")]
-        for i, nn in enumerate(layer_sizes):
-            layer = getattr(layers, args.type)(
-                nn, return_sequences=(i < len(layer_sizes) - 1), implementation=2,
-                dropout=args.dropout)(layer)
-            log.info("Added %s", layer)
+    def add_rnn(device):
+        with tf.device(device):
+            input = layers.Input(batch_shape=(args.batch_size, args.length), dtype="uint8")
+            log.info("Added %s", input)
+            embedding = layers.Embedding(
+                200, 200, embeddings_initializer=initializers.Identity(), trainable=False)(input)
+            log.info("Added %s", embedding)
+            layer = embedding
+            layer_sizes = [int(n) for n in args.layers.split(",")]
+            for i, nn in enumerate(layer_sizes):
+                layer = getattr(layers, args.type)(
+                    nn, return_sequences=(i < len(layer_sizes) - 1), implementation=2,
+                    dropout=args.dropout)(layer)
+                log.info("Added %s", layer)
         return input, layer
 
-    forward_input, forward_output = add_rnn()
-    reverse_input, reverse_output = add_rnn()
-    merged = layers.Concatenate()([forward_output, reverse_output])
-    log.info("Added %s", merged)
+    forward_input, forward_output = add_rnn("/gpu:" + dev1)
+    reverse_input, reverse_output = add_rnn("/gpu:" + dev2)
+    with tf.device("/gpu:" + dev1):
+        merged = layers.Concatenate()([forward_output, reverse_output])
+        log.info("Added %s", merged)
     normer = layers.BatchNormalization()(merged)
     log.info("Added %s", normer)
-    decision = layers.Dense(len(CHARS) + 1, activation="softmax")(normer)
-    log.info("Added %s", decision)
-    model = models.Model(inputs=[forward_input, reverse_input], outputs=[decision])
+    with tf.device("/gpu:" + dev1):
+        decision = layers.Dense(len(CHARS) + 1, activation="softmax")(normer)
+        log.info("Added %s", decision)
     optimizer = getattr(optimizers, args.optimizer)(lr=args.lr)
+    log.info("Added %s", optimizer)
+    model = models.Model(inputs=[forward_input, reverse_input], outputs=[decision])
     log.info("Compiling...")
-    model.compile(optimizer=optimizer, loss="categorical_crossentropy")
+    model.compile(optimizer=optimizer, loss="categorical_crossentropy",
+                  metrics=[metrics.categorical_accuracy, metrics.top_k_categorical_accuracy])
     log.info("Done")
     return model
 
@@ -175,6 +188,7 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
                 text = self.texts[text_index]
                 x = center - self.index[text_index]
                 assert 0 <= x < self.index[text_index + 1] - self.index[text_index]
+                x += args.length // 2
                 text_i = x
                 batch_i = args.length
                 while text_i > 0 and batch_i > 0:
@@ -199,19 +213,23 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
     checkpoint = callbacks.ModelCheckpoint(
         os.path.join(args.tensorboard, "checkpoint_{epoch:02d}_{val_loss:.3f}.hdf5"),
         save_best_only=True)
+    if not args.disable_weights:
+        weights = [v for (c, v) in sorted(WEIGHTS.items())] + [OOV_WEIGHT]
+    else:
+        weights = None
     model.fit_generator(generator=train_feeder,
                         validation_data=valid_feeder,
                         validation_steps=len(valid_feeder),
                         steps_per_epoch=len(train_feeder),
                         epochs=args.epochs,
-                        class_weight=[v for (c, v) in sorted(WEIGHTS.items())] + [OOV_WEIGHT],
+                        class_weight=weights,
                         callbacks=[tensorboard, checkpoint],
                         use_multiprocessing=True)
 
 
 def main():
     args = setup()
-    dataset, _ = read_dataset(args.input, True, False)
+    dataset, _ = read_dataset(args.input, args.length + 1, True, False)
     model_char = create_char_rnn_model(args)
     train_char_rnn_model(model_char, dataset, args)
 
