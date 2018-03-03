@@ -236,7 +236,7 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
         os.path.join(args.tensorboard, "checkpoint_{epoch:02d}_{val_loss:.3f}.hdf5"),
         save_best_only=True)
     if not args.disable_weights:
-        weights = [v for (c, v) in sorted(WEIGHTS.items())] + [OOV_WEIGHT]
+        weights = [min(v, 100) for (c, v) in sorted(WEIGHTS.items())] + [OOV_WEIGHT]
     else:
         weights = None
     model.fit_generator(generator=train_feeder,
