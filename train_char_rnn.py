@@ -211,18 +211,18 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
                 x = center - self.index[text_index]
                 assert 0 <= x < self.index[text_index + 1] - self.index[text_index]
                 x += args.length // 2
-                text_i = x
-                batch_i = args.length
-                while text_i > 0 and batch_i > 0:
+                text_i = x - 1
+                batch_i = args.length - 1
+                while text_i >= 0 and batch_i >= 0:
+                    batch[0][0][bi][batch_i] = CHARS.get(text[text_i], len(CHARS))
                     text_i -= 1
                     batch_i -= 1
-                    batch[0][0][bi][batch_i] = CHARS.get(text[text_i], len(CHARS))
-                text_i = x
-                batch_i = args.length
-                while text_i < len(text) - 1 and batch_i > 0:
+                text_i = x + 1
+                batch_i = args.length - 1
+                while text_i < len(text) and batch_i >= 0:
+                    batch[0][1][bi][batch_i] = CHARS.get(text[text_i], len(CHARS))
                     text_i += 1
                     batch_i -= 1
-                    batch[0][1][bi][batch_i] = CHARS.get(text[text_i], len(CHARS))
                 batch[1][0][bi][CHARS.get(text[x], len(CHARS))] = 1
             return batch
 
