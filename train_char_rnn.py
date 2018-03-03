@@ -195,7 +195,7 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
             # this takes much memory but is the best we can do.
             self.batches = numpy.arange(pos, dtype=numpy.uint32)
             log.info("Batches occupied %s", humanize.naturalsize(self.batches.size))
-            numpy.random.shuffle(self.batches)
+            self.on_epoch_end()
 
         def __len__(self):
             return self.index[-1] // args.batch_size
@@ -225,6 +225,9 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
                     batch_i -= 1
                 batch[1][0][bi][CHARS.get(text[x], len(CHARS))] = 1
             return batch
+
+        def on_epoch_end(self):
+            numpy.random.shuffle(self.batches)
 
     log.info("Creating the training feeder")
     train_feeder = Feeder(train_docs)
