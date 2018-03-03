@@ -3,9 +3,11 @@ from collections import defaultdict
 import gzip
 import logging
 import os
+import pickle
 import random
+import re
 import sys
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 
 import humanize
 import numpy
@@ -15,7 +17,7 @@ from chars import CHARS, WEIGHTS, OOV_WEIGHT
 
 def setup():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-i", "--input", required=True, help="Path to the train dataset.")
+    parser.add_argument("-i", "--input", help="Path to the train dataset.")
     parser.add_argument("-l", "--layers", default="512,256",
                         help="Layers configuration: number of neurons on each layer separated by "
                              "comma.")
@@ -26,8 +28,13 @@ def setup():
                         help="Recurrent layer type to use.")
     parser.add_argument("-v", "--validation", type=float, default=0.2,
                         help="Fraction of the dataset to use for validation.")
+    parser.add_argument("--negative-code-samples", type=float, default=0.5,
+                        help="Ratio of negative code boundary samples to the overall number.")
     parser.add_argument("-o", "--output", required=True,
                         help="Path to the resulting Tensorflow graph.")
+    parser.add_argument("--snapshot", help="RNN snapshot to load.")
+    parser.add_argument("--code-samples", default="code_samples.pickle",
+                        help="Cached pickle with the dataset to train Code Neuron.")
     parser.add_argument("--optimizer", default="RMSprop", choices=("RMSprop", "Adam"),
                         help="Optimizer to apply.")
     parser.add_argument("--dropout", type=float, default=0, help="Dropout ratio.")
@@ -35,7 +42,7 @@ def setup():
     parser.add_argument("--disable-weights", action="store_true",
                         help="Do not weight char classes.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
-    parser.add_argument("--devices", default="0,1", help="Devices to use.")
+    parser.add_argument("--devices", default="0,1", help="Devices to use. Empty means CPU.")
     parser.add_argument("--tensorboard", default="tb_logs",
                         help="TensorBoard output logs directory.")
     logging.basicConfig(level=logging.INFO)
@@ -95,16 +102,25 @@ def read_dataset(path: str, min_length: int, clean_code: bool, analyze_chars: bo
     return texts, chars
 
 
-def create_char_rnn_model(args: argparse.Namespace):
-    # late import prevent from loading Tensorflow too soon
+def config_keras():
     import tensorflow as tf
-    tf.set_random_seed(args.seed)
-    from keras import layers, models, initializers, optimizers, backend, metrics
-    log = logging.getLogger("model")
-    dev1, dev2 = args.devices.split(",")
+    from keras import backend
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     backend.tensorflow_backend.set_session(tf.Session(config=config))
+
+
+def create_char_rnn_model(args: argparse.Namespace, classes: int,
+                          weights: Optional[List[numpy.ndarray]] = None):
+    # this late import prevents from loading Tensorflow too soon
+    import tensorflow as tf
+    tf.set_random_seed(args.seed)
+    from keras import layers, models, initializers, optimizers, metrics
+    log = logging.getLogger("model")
+    if args.devices:
+        dev1, dev2 = ("/gpu:" + dev for dev in args.devices.split(","))
+    else:
+        dev1 = dev2 = "/cpu:0"
 
     def add_rnn(device):
         with tf.device(device):
@@ -122,15 +138,16 @@ def create_char_rnn_model(args: argparse.Namespace):
                 log.info("Added %s", layer)
         return input, layer
 
-    forward_input, forward_output = add_rnn("/gpu:" + dev1)
-    reverse_input, reverse_output = add_rnn("/gpu:" + dev2)
-    with tf.device("/gpu:" + dev1):
+    forward_input, forward_output = add_rnn(dev1)
+    reverse_input, reverse_output = add_rnn(dev2)
+    with tf.device(dev1):
         merged = layers.Concatenate()([forward_output, reverse_output])
         log.info("Added %s", merged)
     normer = layers.BatchNormalization()(merged)
     log.info("Added %s", normer)
-    with tf.device("/gpu:" + dev1):
-        decision = layers.Dense(len(CHARS) + 1, activation="softmax")(normer)
+    with tf.device(dev1):
+        dense = layers.Dense(classes, activation="softmax")
+        decision = dense(normer)
         log.info("Added %s", decision)
     optimizer = getattr(optimizers, args.optimizer)(lr=args.lr)
     log.info("Added %s", optimizer)
@@ -138,6 +155,11 @@ def create_char_rnn_model(args: argparse.Namespace):
     log.info("Compiling...")
     model.compile(optimizer=optimizer, loss="categorical_crossentropy",
                   metrics=[metrics.categorical_accuracy, metrics.top_k_categorical_accuracy])
+    if weights:
+        log.info("Setting weights...")
+        dense_weights = dense.get_weights()
+        weights[-len(dense_weights):] = dense_weights
+        model.set_weights(weights)
     log.info("Done")
     return model
 
@@ -227,11 +249,165 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
                         use_multiprocessing=True)
 
 
+def load_char_rnn_model(args: argparse.Namespace):
+    from keras.models import load_model
+    from keras.layers.recurrent import RNN
+
+    log = logging.getLogger("load")
+    log.info("Reading %s", args.snapshot)
+    model = load_model(args.snapshot, compile=False)
+    args.batch_size, args.length = model.layers[0].input_shape
+    lengths = []
+    for layer in model.layers:
+        if isinstance(layer, RNN):
+            args.type = type(layer).__name__
+            length = layer.output_shape[-1]
+            if not lengths or lengths[-1] != length:
+                lengths.append(length)
+    args.layers = ",".join(str(l) for l in lengths)
+    log.info("Inferred parameters: --batch-size %d --length %d --type %s --layers %s",
+             args.batch_size, args.length, args.type, args.layers)
+    return model
+
+
+def bake_code_neuron_dataset(texts: List[str], negative_ratio: float, length: int) \
+        -> Tuple[List[Tuple[numpy.ndarray, numpy.ndarray]],
+                 List[Tuple[numpy.ndarray, numpy.ndarray]],
+                 List[Tuple[numpy.ndarray, numpy.ndarray]]]:
+    assert 0 < negative_ratio < 1
+    log = logging.getLogger("code_neuron_dataset")
+    positive_beg = []
+    positive_neg = []
+    negative = []
+    needle = re.compile("[\x02\x03]")
+
+    def gen_sample(x: int, text: str):
+        before = numpy.zeros(length, dtype=numpy.uint8)
+        i = x - 1
+        j = length - 1
+        while i >= 0 and j >= 0:
+            if i not in ("\x02", "\x03"):
+                before[j] = CHARS.get(text[i], len(CHARS))
+                j -= 1
+            i -= 1
+        after = numpy.zeros(length, dtype=numpy.uint8)
+        i = x + 1
+        j = length - 1
+        while i < len(text) and j >= 0:
+            if i not in ("\x02", "\x03"):
+                after[j] = CHARS.get(text[i], len(CHARS))
+                j -= 1
+            i += 1
+        return before, after
+
+    for text in texts:
+        for match in needle.finditer(text):
+            arr = positive_beg if match.group() == "\x02" else positive_neg
+            arr.append(gen_sample(match.start(), text))
+    positive_count = len(positive_beg) + len(positive_neg)
+    negative_count = int(negative_ratio * positive_count / (1 - negative_ratio))
+    log.info("Positive count: %d (%d, %d)", positive_count, len(positive_beg), len(positive_neg))
+    log.info("Negative count: %d", negative_count)
+    total_samples = sum(len(text) - length for text in texts)
+    numpy.random.seed(7)
+    choices = numpy.random.choice(numpy.arange(total_samples, dtype=numpy.int32),
+                                  negative_count, replace=False)
+    choices.sort()
+    pos = 0
+    ni = 0
+    for text in texts:
+        delta = len(text) - length
+        while pos + delta > choices[ni]:
+            x = choices[ni] - pos + length // 2
+            while x < len(text) and text[x] in ("\x02", "\x03"):
+                x += 1
+            negative.append(gen_sample(x, text))
+            ni += 1
+            if ni == len(choices):
+                break
+        pos += delta
+    return positive_beg, positive_neg, negative
+
+
+def train_code_neuron_model(
+        model_code,
+        samples: Tuple[List[Tuple[numpy.ndarray, numpy.ndarray]],
+                       List[Tuple[numpy.ndarray, numpy.ndarray]],
+                       List[Tuple[numpy.ndarray, numpy.ndarray]]],
+        args: argparse.Namespace):
+    train_x_before = numpy.zeros((sum(len(samples[i]) for i in range(3)), args.length),
+                                 dtype=numpy.uint8)
+    train_x_after = numpy.zeros_like(train_x_before)
+    train_y = numpy.zeros((train_x_before.shape[0], 3), dtype=numpy.float32)
+
+    def fill(offset: int, arr: List[Tuple[numpy.ndarray, numpy.ndarray]], y: numpy.ndarray):
+        for before, after in arr:
+            train_x_before[offset] = before
+            train_x_after[offset] = after
+            train_y[offset] = y
+            offset += 1
+        return offset
+
+    offset = fill(0, samples[0], numpy.array([1, 0, 0], dtype=numpy.float32))
+    offset = fill(offset, samples[1], numpy.array([0, 1, 0], dtype=numpy.float32))
+    fill(offset, samples[2], numpy.array([0, 0, 1], dtype=numpy.float32))
+
+    from keras import callbacks
+
+    tensorboard = callbacks.TensorBoard(log_dir=args.tensorboard)
+    checkpoint = callbacks.ModelCheckpoint(
+        os.path.join(args.tensorboard, "checkpoint_{epoch:02d}_{val_loss:.3f}.hdf5"),
+        save_best_only=True)
+    model_code.fit([train_x_before, train_x_after], train_y,
+                   batch_size=args.batch_size, validation_split=args.validation,
+                   epochs=args.epochs, callbacks=[tensorboard, checkpoint])
+
+
+def export_model(model, path: str):
+    from keras import backend
+    import tensorflow as tf
+    from tensorflow.python.framework import graph_util, graph_io
+
+    log = logging.getLogger("export")
+    log.info("Exporting %s to %s", model, path)
+    session = backend.get_session()
+    tf.identity(model.outputs[0], name="output")
+    constant_graph = graph_util.convert_variables_to_constants(
+        session, session.graph.as_graph_def(), ["output"])
+    graph_io.write_graph(constant_graph, *os.path.split(path), as_text=False)
+
+
 def main():
     args = setup()
-    dataset, _ = read_dataset(args.input, args.length + 1, True, False)
-    model_char = create_char_rnn_model(args)
-    train_char_rnn_model(model_char, dataset, args)
+    try:
+        if not args.snapshot:
+            dataset, _ = read_dataset(args.input, args.length + 1, True, False)
+            config_keras()
+            model_char = create_char_rnn_model(args, len(CHARS) + 1)
+            train_char_rnn_model(model_char, dataset, args)
+            del dataset
+        else:
+            config_keras()
+            model_char = load_char_rnn_model(args)
+        if not os.path.exists(args.code_samples):
+            if not args.input or not os.path.exists(args.input):
+                raise FileNotFoundError("--input %s" % args.input)
+            dataset, _ = read_dataset(args.input, args.length + 1, False, False)
+            samples = bake_code_neuron_dataset(dataset, args.negative_code_samples, args.length)
+            del dataset
+            with open(args.code_samples, "wb") as fout:
+                pickle.dump(samples, fout, protocol=-1)
+        else:
+            with open(args.code_samples, "rb") as fin:
+                samples = pickle.load(fin)
+        model_code = create_char_rnn_model(args, 3, model_char.get_weights())
+        del model_char
+        train_code_neuron_model(model_code, samples, args)
+        export_model(model_code, args.output)
+        del model_code
+    finally:
+        from keras import backend
+        backend.clear_session()
 
 if __name__ == "__main__":
     sys.exit(main())
