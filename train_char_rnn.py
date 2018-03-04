@@ -39,8 +39,10 @@ def setup():
                         help="Optimizer to apply.")
     parser.add_argument("--dropout", type=float, default=0, help="Dropout ratio.")
     parser.add_argument("--lr", default=0.01, type=float, help="Learning rate.")
-    parser.add_argument("--disable-weights", action="store_true",
-                        help="Do not weight char classes.")
+    parser.add_argument("--enable-weights", action="store_true",
+                        help="Weight character classes.")
+    parser.add_argument("--enable-norm", action="store_true",
+                        help="Enable batch normalization before the dense layer.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
     parser.add_argument("--devices", default="0,1", help="Devices to use. Empty means CPU.")
     parser.add_argument("--tensorboard", default="tb_logs",
@@ -146,11 +148,12 @@ def create_char_rnn_model(args: argparse.Namespace, classes: int,
     with tf.device(dev1):
         merged = layers.Concatenate()([forward_output, reverse_output])
         log.info("Added %s", merged)
-    normer = layers.BatchNormalization()(merged)
-    log.info("Added %s", normer)
+    if args.enable_norm:
+        merged = layers.BatchNormalization()(merged)
+        log.info("Added %s", merged)
     with tf.device(dev1):
         dense = layers.Dense(classes, activation="softmax")
-        decision = dense(normer)
+        decision = dense(merged)
         log.info("Added %s", decision)
     optimizer = getattr(optimizers, args.optimizer)(lr=args.lr)
     log.info("Added %s", optimizer)
@@ -241,7 +244,7 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
     checkpoint = callbacks.ModelCheckpoint(
         os.path.join(args.tensorboard, "checkpoint_{epoch:02d}_{val_loss:.3f}.hdf5"),
         save_best_only=True)
-    if not args.disable_weights:
+    if args.enable_weights:
         weights = [min(v, 100) for (c, v) in sorted(WEIGHTS.items())] + [OOV_WEIGHT]
     else:
         weights = None
