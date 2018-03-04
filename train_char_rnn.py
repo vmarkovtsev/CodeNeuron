@@ -338,10 +338,11 @@ def train_code_neuron_model(
                        List[Tuple[numpy.ndarray, numpy.ndarray]],
                        List[Tuple[numpy.ndarray, numpy.ndarray]]],
         args: argparse.Namespace):
-    train_x_before = numpy.zeros((sum(len(samples[i]) for i in range(3)), args.length),
-                                 dtype=numpy.uint8)
+    size = sum(len(samples[i]) for i in range(3))
+    size -= size % args.batch_size
+    train_x_before = numpy.zeros((size, args.length), dtype=numpy.uint8)
     train_x_after = numpy.zeros_like(train_x_before)
-    train_y = numpy.zeros((train_x_before.shape[0], 3), dtype=numpy.float32)
+    train_y = numpy.zeros((size, 3), dtype=numpy.float32)
 
     def fill(offset: int, arr: List[Tuple[numpy.ndarray, numpy.ndarray]], y: numpy.ndarray):
         for before, after in arr:
