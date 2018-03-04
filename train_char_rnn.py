@@ -38,8 +38,8 @@ def setup():
     parser.add_argument("--optimizer", default="Adam", choices=("RMSprop", "Adam"),
                         help="Optimizer to apply.")
     parser.add_argument("--dropout", type=float, default=0, help="Dropout ratio.")
-    parser.add_argument("--lr", default=0.01, type=float, help="Learning rate.")
-    parser.add_argument("--decay", default=0.00005, type=float, help="Learning rate decay.")
+    parser.add_argument("--lr", default=0.001, type=float, help="Learning rate.")
+    parser.add_argument("--decay", default=0.00001, type=float, help="Learning rate decay.")
     parser.add_argument("--enable-weights", action="store_true",
                         help="Weight character classes.")
     parser.add_argument("--enable-norm", action="store_true",
@@ -234,6 +234,7 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
             return batch
 
         def on_epoch_end(self):
+            log.info("Shuffling")
             numpy.random.shuffle(self.batches)
 
     log.info("Creating the training feeder")
