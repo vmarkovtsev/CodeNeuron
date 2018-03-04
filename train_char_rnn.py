@@ -129,12 +129,15 @@ def create_char_rnn_model(args: argparse.Namespace, classes: int,
             embedding = layers.Embedding(
                 200, 200, embeddings_initializer=initializers.Identity(), trainable=False)(input)
             log.info("Added %s", embedding)
-            layer = embedding
-            layer_sizes = [int(n) for n in args.layers.split(",")]
-            for i, nn in enumerate(layer_sizes):
+        layer = embedding
+        layer_sizes = [int(n) for n in args.layers.split(",")]
+        for i, nn in enumerate(layer_sizes):
+            with tf.device(device):
                 layer = getattr(layers, args.type)(
-                    nn, return_sequences=(i < len(layer_sizes) - 1), implementation=2,
-                    dropout=args.dropout)(layer)
+                    nn, return_sequences=(i < len(layer_sizes) - 1), implementation=2)(layer)
+                log.info("Added %s", layer)
+            if args.dropout > 0:
+                layer = layers.Dropout(args.dropout)(layer)
                 log.info("Added %s", layer)
         return input, layer
 
