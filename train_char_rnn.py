@@ -22,9 +22,9 @@ def setup():
                         help="Layers configuration: number of neurons on each layer separated by "
                              "comma.")
     parser.add_argument("-m", "--length", type=int, default=100, help="RNN sequence length.")
-    parser.add_argument("-b", "--batch-size", type=int, default=100, help="Batch size.")
+    parser.add_argument("-b", "--batch-size", type=int, default=128, help="Batch size.")
     parser.add_argument("-e", "--epochs", type=int, default=5, help="Number of epochs.")
-    parser.add_argument("-t", "--type", default="GRU", choices=("GRU", "LSTM"),
+    parser.add_argument("-t", "--type", default="LSTM", choices=("GRU", "LSTM"),
                         help="Recurrent layer type to use.")
     parser.add_argument("-v", "--validation", type=float, default=0.2,
                         help="Fraction of the dataset to use for validation.")
@@ -35,7 +35,7 @@ def setup():
     parser.add_argument("--snapshot", help="RNN snapshot to load.")
     parser.add_argument("--code-samples", default="code_samples.pickle",
                         help="Cached pickle with the dataset to train Code Neuron.")
-    parser.add_argument("--optimizer", default="RMSprop", choices=("RMSprop", "Adam"),
+    parser.add_argument("--optimizer", default="Adam", choices=("RMSprop", "Adam"),
                         help="Optimizer to apply.")
     parser.add_argument("--dropout", type=float, default=0, help="Dropout ratio.")
     parser.add_argument("--lr", default=0.01, type=float, help="Learning rate.")
