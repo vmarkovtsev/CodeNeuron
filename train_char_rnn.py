@@ -39,6 +39,7 @@ def setup():
                         help="Optimizer to apply.")
     parser.add_argument("--dropout", type=float, default=0, help="Dropout ratio.")
     parser.add_argument("--lr", default=0.01, type=float, help="Learning rate.")
+    parser.add_argument("--decay", default=0.00005, type=float, help="Learning rate decay.")
     parser.add_argument("--enable-weights", action="store_true",
                         help="Weight character classes.")
     parser.add_argument("--enable-norm", action="store_true",
@@ -155,7 +156,7 @@ def create_char_rnn_model(args: argparse.Namespace, classes: int,
         dense = layers.Dense(classes, activation="softmax")
         decision = dense(merged)
         log.info("Added %s", decision)
-    optimizer = getattr(optimizers, args.optimizer)(lr=args.lr)
+    optimizer = getattr(optimizers, args.optimizer)(lr=args.lr, decay=args.decay)
     log.info("Added %s", optimizer)
     model = models.Model(inputs=[forward_input, reverse_input], outputs=[decision])
     log.info("Compiling...")
