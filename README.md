@@ -43,6 +43,22 @@ Training was performed with 20% validation on first 128000000 bytes of the uncom
 This means I was lazy to wait a week for it to train on the whole dataset - you are encouraged
 to experiment.
 
+Try to run it:
+
+```
+cat sample.txt | python3 run_model.py -m model_LSTM_512_0.9790.pb
+```
+
+You should see:
+
+```
+Here is my Go code, it is awesome and easy to read:
+<code>func main() {
+  println(Hello, world!)
+}
+</code>Please say what you think about it. In my opinion, it is the best code I have ever written.
+```
+
 License
 -------
 

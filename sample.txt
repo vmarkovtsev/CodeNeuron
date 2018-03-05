@@ -1,0 +1,5 @@
+Here is my Go code, it is awesome and easy to read:
+func main() {
+  println("Hello, world!")
+}
+Please say what you think about it. In my opinion, it is the best code I have ever written.
