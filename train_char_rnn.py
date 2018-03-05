@@ -250,13 +250,58 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
         weights = [min(v, 100) for (c, v) in sorted(WEIGHTS.items())] + [OOV_WEIGHT]
     else:
         weights = None
+
+    class Shuffler(callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            # Bug: it is not called automatically
+            train_feeder.on_epoch_end()
+
+    class Presenter(callbacks.Callback):
+        def __init__(self):
+            super().__init__()
+            self.i = 0
+            self.text = "I am working on a collection of classes used for video playback and " \
+                        "recording. I have one main class which acts like the public interface, " \
+                        "with methods like play(), stop(), pause(), record() etc...  Then I " \
+                        "have workhorse classes which do the video decoding and video encoding."
+            self.batches = []
+            for x in range(args.length // 2, len(self.text) - args.length // 2 - 1):
+                before = self.text[x - args.length//2:x]
+                after = self.text[x + 1:x + 1 + args.length // 2]
+                before_arr = numpy.zeros(args.length, dtype=numpy.uint8)
+                after_arr = numpy.zeros_like(before_arr)
+                for i, c in enumerate(reversed(before)):
+                    before_arr[args.length - 1 - i] = CHARS.get(c, len(CHARS))
+                for i, c in enumerate(reversed(after)):
+                    after_arr[args.length - 1 - i] = CHARS.get(c, len(CHARS))
+                self.batches.append((before_arr, after_arr))
+            log.info("Testing on %d batches" % len(self.batches))
+            self.vocab = [None] * (len(CHARS) + 1)
+            for k, v in CHARS.items():
+                self.vocab[v] = k
+            self.vocab[len(CHARS)] = "?"
+
+        def on_batch_end(self, batch, logs=None):
+            if self.i % 10000 == 0:
+                predicted = model.predict(self.batches, batch_size=len(self.batches))
+                print("".join(self.vocab[numpy.argmax(p)] for p in predicted))
+
+    class LRPrinter(callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            lr = self.model.optimizer.lr
+            decay = self.model.optimizer.decay
+            iterations = self.model.optimizer.iterations
+            lr_with_decay = lr / (1. + decay * K.cast(iterations, K.dtype(decay)))
+            from keras import backend
+            print("Learning rate:", backend.eval(lr_with_decay))
+
     model.fit_generator(generator=train_feeder,
                         validation_data=valid_feeder,
                         validation_steps=len(valid_feeder),
                         steps_per_epoch=len(train_feeder),
                         epochs=args.epochs,
                         class_weight=weights,
-                        callbacks=[tensorboard, checkpoint],
+                        callbacks=[tensorboard, checkpoint, Shuffler(), Presenter(), LRPrinter()],
                         use_multiprocessing=True)
 
 
