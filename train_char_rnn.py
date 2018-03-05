@@ -23,7 +23,7 @@ def setup():
                              "comma.")
     parser.add_argument("-m", "--length", type=int, default=100, help="RNN sequence length.")
     parser.add_argument("-b", "--batch-size", type=int, default=128, help="Batch size.")
-    parser.add_argument("-e", "--epochs", type=int, default=5, help="Number of epochs.")
+    parser.add_argument("-e", "--epochs", type=int, default=3, help="Number of epochs.")
     parser.add_argument("-t", "--type", default="LSTM", choices=("GRU", "LSTM"),
                         help="Recurrent layer type to use.")
     parser.add_argument("-v", "--validation", type=float, default=0.2,
@@ -39,7 +39,7 @@ def setup():
                         help="Optimizer to apply.")
     parser.add_argument("--dropout", type=float, default=0, help="Dropout ratio.")
     parser.add_argument("--lr", default=0.001, type=float, help="Learning rate.")
-    parser.add_argument("--decay", default=0.00001, type=float, help="Learning rate decay.")
+    parser.add_argument("--decay", default=0.00002, type=float, help="Learning rate decay.")
     parser.add_argument("--enable-weights", action="store_true",
                         help="Weight character classes.")
     parser.add_argument("--enable-norm", action="store_true",
@@ -346,8 +346,12 @@ def train_code_neuron_model(
                        List[Tuple[numpy.ndarray, numpy.ndarray]],
                        List[Tuple[numpy.ndarray, numpy.ndarray]]],
         args: argparse.Namespace):
+    log = logging.getLogger("train_cn")
     size = sum(len(samples[i]) for i in range(3))
-    size -= size % args.batch_size
+    val_size = int(size * args.validation)
+    val_size -= val_size % args.batch_size
+    size = int(val_size / args.validation)
+    log.info("Final size: %d", size)
     train_x_before = numpy.zeros((size, args.length), dtype=numpy.uint8)
     train_x_after = numpy.zeros_like(train_x_before)
     train_y = numpy.zeros((size, 3), dtype=numpy.float32)
@@ -358,6 +362,8 @@ def train_code_neuron_model(
             train_x_after[offset] = after
             train_y[offset] = y
             offset += 1
+            if offset == size:
+                break
         return offset
 
     offset = fill(0, samples[0], numpy.array([1, 0, 0], dtype=numpy.float32))
