@@ -342,7 +342,7 @@ def bake_code_neuron_dataset(texts: List[str], negative_ratio: float, length: in
         i = x - 1
         j = length - 1
         while i >= 0 and j >= 0:
-            if i not in ("\x02", "\x03"):
+            if text[i] not in ("\x02", "\x03"):
                 before[j] = CHARS.get(text[i], len(CHARS))
                 j -= 1
             i -= 1
@@ -350,7 +350,7 @@ def bake_code_neuron_dataset(texts: List[str], negative_ratio: float, length: in
         i = x + 1
         j = length - 1
         while i < len(text) and j >= 0:
-            if i not in ("\x02", "\x03"):
+            if text[i] not in ("\x02", "\x03"):
                 after[j] = CHARS.get(text[i], len(CHARS))
                 j -= 1
             i += 1
