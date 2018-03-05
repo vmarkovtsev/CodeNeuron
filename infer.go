@@ -9,13 +9,6 @@ import (
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
 )
 
-// RNNs require the context, so the beginning and the ending of each phrase cannot be processed.
-// We prepend and append some silly text to overcome that.
-const (
-	header = "Meditation. I Am Happy, I Am Good, I Am Happy, I Am Good."
-	footer = header
-)
-
 var CHARS = map[rune]uint8{
 	'\n':     0,
 	' ':      1,
@@ -250,7 +243,7 @@ func readInput(batchSize, sequenceLength int) ([]rune, []*tf.Tensor, []*tf.Tenso
 		log.Fatal("empty input")
 	}
 	text := []rune(string(textBytes))
-	realSize := len(text)
+	realSize := len(text) - sequenceLength
 	inputSize := realSize
 	if inputSize % batchSize != 0 {
 		inputSize = (inputSize / batchSize + 1) * batchSize
@@ -266,13 +259,12 @@ func readInput(batchSize, sequenceLength int) ([]rune, []*tf.Tensor, []*tf.Tenso
 		batches1[i / batchSize][i % batchSize] = arr
 		batches2[i / batchSize][i % batchSize] = arr
 	}
-	augmentedText := []rune(header + string(text) + footer)
 	pos := 0
-	for x := range augmentedText {
-		if x < len(header) {
+	for x := range text {
+		if x < sequenceLength / 2 {
 			continue
 		}
-		if x >= len(header) + realSize {
+		if x >= len(text) - sequenceLength / 2 {
 			break
 		}
 		arr1 := make([]uint8, sequenceLength)
@@ -282,15 +274,15 @@ func readInput(batchSize, sequenceLength int) ([]rune, []*tf.Tensor, []*tf.Tenso
 		for i := 0; i < sequenceLength; i++ {
 			bi := x - sequenceLength + i + 1
 			if bi >= 0 {
-				val, exists := CHARS[augmentedText[bi]]
+				val, exists := CHARS[text[bi]]
 				if !exists {
 					val = uint8(len(CHARS))
 				}
 				arr1[i] = val
 			}
 			bi = x + sequenceLength - i
-			if bi < len(augmentedText) {
-				val, exists := CHARS[augmentedText[bi]]
+			if bi < len(text) {
+				val, exists := CHARS[text[bi]]
 				if !exists {
 					val = uint8(len(CHARS))
 				}
@@ -336,6 +328,7 @@ func main() {
 		log.Fatalf("Failed to create a Tensorflow session: %v", err)
 	}
 	pos := 0
+	print(string(text[:sequenceLength / 2]))
 	for i := range tensors1 {
 		result, err := session.Run(map[tf.Output]*tf.Tensor{
 			input1: tensors1[i], input2: tensors2[i],
@@ -345,7 +338,7 @@ func main() {
 		}
 		probs := result[0].Value().([][]float32)
 		for _, prob := range probs {
-			print(string(text[pos]))
+			print(string(text[pos + sequenceLength / 2]))
 			maxi := 2
 			maxval := prob[2]
 			if prob[0] > maxval {
@@ -356,16 +349,16 @@ func main() {
 				maxi = 1
 				maxval = prob[1]
 			}
-			if maxi == 0 && pos < len(text) - 1 {
+			if maxi == 0 {
 				print("<code>")
-			}
-			if maxi == 1 {
+			} else if maxi == 1 {
 				print("</code>")
 			}
 			pos++
-			if pos >= len(text) {
+			if pos >= len(text) - sequenceLength {
 				break
 			}
 		}
 	}
+	print(string(text[len(text) - sequenceLength / 2:]))
 }

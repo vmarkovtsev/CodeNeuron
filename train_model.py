@@ -379,6 +379,10 @@ def bake_code_neuron_dataset(texts: List[str], negative_ratio: float, length: in
             x = choices[ni] - pos + length // 2
             while x < len(text) and text[x] in ("\x02", "\x03"):
                 x += 1
+            if x == len(text):
+                while x >= 0 and text[x] in ("\x02", "\x03"):
+                    x -= 1
+                assert x >= 0
             negative.append(gen_sample(x, text))
             ni += 1
             if ni == len(choices):

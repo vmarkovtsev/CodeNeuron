@@ -8,11 +8,6 @@ import numpy
 from chars import CHARS
 
 
-# RNNs require the context, so the beginning and the ending of each phrase cannot be processed.
-# We prepend and append some silly text to overcome that.
-header = footer = "Meditation. I Am Happy, I Am Good, I Am Happy, I Am Good."
-
-
 def setup():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-m", "--model", required=True,
@@ -37,7 +32,6 @@ def main():
     output = graph.get_operation_by_name("output").inputs[0]
     batch_size, length = (d.value for d in input1.shape)
     text = sys.stdin.read()
-    text = header + text + footer
     batches = [[], []]
 
     def gen_sample(x: int, text: str):
@@ -61,7 +55,7 @@ def main():
             i += 1
         return before, after
 
-    for i in range(len(header), len(text) - len(footer)):
+    for i in range(length // 2, len(text) - length // 2):
         before, after = gen_sample(i, text)
         batches[0].append(before)
         batches[1].append(after)
@@ -86,9 +80,9 @@ def main():
     result = result[:inputs_size]
     if result[-1] == 0:
         result[-1] = 2  # never ends with code
-    text = text[len(header):-len(footer)]
     print()
-    for i, (x, r) in enumerate(zip(text, result)):
+    sys.stdout.write(text[:length // 2])
+    for i, (x, r) in enumerate(zip(text[length // 2:-length // 2], result)):
         if r == 2:
             sys.stdout.write(x)
             continue
@@ -96,7 +90,7 @@ def main():
             sys.stdout.write(x + "<code>")
         else:
             sys.stdout.write(x + "</code>")
-
+    sys.stdout.write(text[-length // 2:])
 
 if __name__ == "__main__":
     sys.exit(main())
