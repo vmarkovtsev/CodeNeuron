@@ -435,8 +435,11 @@ def export_model(model, path: str):
     log.info("Exporting %s to %s", model, path)
     session = backend.get_session()
     tf.identity(model.outputs[0], name="output")
-    constant_graph = graph_util.convert_variables_to_constants(
-        session, session.graph.as_graph_def(), ["output"])
+    graph_def = session.graph.as_graph_def()
+    # reset the devices
+    for node in graph_def.node:
+        node.device = ""
+    constant_graph = graph_util.convert_variables_to_constants(session, graph_def, ["output"])
     graph_io.write_graph(constant_graph, *os.path.split(path), as_text=False)
 
 
