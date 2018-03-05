@@ -371,7 +371,9 @@ def bake_code_neuron_dataset(texts: List[str], negative_ratio: float, length: in
     choices.sort()
     pos = 0
     ni = 0
-    for text in texts:
+    for ti, text in enumerate(texts):
+        if ti % 100 == 0:
+            sys.stderr.write("%d\r" % ti)
         delta = len(text) - length
         while pos + delta > choices[ni]:
             x = choices[ni] - pos + length // 2
@@ -381,7 +383,10 @@ def bake_code_neuron_dataset(texts: List[str], negative_ratio: float, length: in
             ni += 1
             if ni == len(choices):
                 break
+        if ni == len(choices):
+            break
         pos += delta
+    sys.stderr.write("\n")
     return positive_beg, positive_neg, negative
 
 

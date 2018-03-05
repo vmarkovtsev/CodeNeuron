@@ -8,10 +8,17 @@ import numpy
 from chars import CHARS
 
 
+# RNNs require the context, so the beginning and the ending of each phrase cannot be processed.
+# We prepend and append some silly text to overcome that.
+header = footer = "Meditation. I Am Happy, I Am Good, I Am Happy, I Am Good."
+
+
 def setup():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-m", "--model",
+    parser.add_argument("-m", "--model", required=True,
                         help="Path to the trained model in Tensorflow GraphDef format.")
+    parser.add_argument("--disable-filtering", action="store_true",
+                        help="Disable anti-false-positives postprocessing.")
     logging.basicConfig(level=logging.ERROR)
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
     return parser.parse_args()
@@ -32,6 +39,7 @@ def main():
     output = graph.get_operation_by_name("output").inputs[0]
     batch_size, length = (d.value for d in input1.shape)
     text = sys.stdin.read()
+    text = header + text + footer
     batches = [[], []]
     for x in range(length // 2, len(text) - length // 2 - 1):
         before = text[x - length // 2:x]
@@ -59,16 +67,32 @@ def main():
         with tf.Session() as session:
             probs = session.run(output, {input1: batch1, input2: batch2})
             result.extend(numpy.argmax(probs, axis=-1))
-    result = result[:inputs_size]
-    # simple heuristic to reduce false positives
-    code_mode = False
-    for i, r in enumerate(reversed(result)):
-        if r == 1:
-            code_mode = True
-        elif r == 0:
-            if not code_mode:
-                result[len(result) - 1 - i] = 2
-            code_mode = False
+    result = result[len(header):inputs_size - len(footer)]
+    text = text[len(header):-len(footer)]
+    if not args.disable_filtering:
+        # simple heuristics to reduce false positives
+        # no opening without a closing
+        code_mode = False
+        for i, r in enumerate(reversed(result)):
+            if r == 1:
+                if code_mode:
+                    result[len(result) - 1 - i] = 2
+                code_mode = True
+            elif r == 0:
+                if not code_mode:
+                    result[len(result) - 1 - i] = 2
+                code_mode = False
+        # no closing without an opening
+        code_mode = False
+        for i, r in enumerate(result):
+            if r == 0:
+                if code_mode:
+                    result[i] = 2
+                code_mode = True
+            elif r == 1:
+                if not code_mode:
+                    result[i] = 2
+                code_mode = False
     print()
     sys.stdout.write(text[:length // 2])
     for x, r in zip(text[length // 2: len(text) - length // 2 - 1], result):
