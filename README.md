@@ -59,6 +59,13 @@ Here is my Go code, it is awesome and easy to read:
 </code>Please say what you think about it. In my opinion, it is the best code I have ever written.
 ```
 
+Visualize the trained model:
+
+```
+python3 model2tb.py --model-dir model_LSTM_512_0.9790.pb --log-dir tb_logs
+tensorboard --logdir=tb_logs
+```
+
 License
 -------
 
