@@ -30,7 +30,7 @@ Training set
 [StackSample questions and answers](https://www.kaggle.com/stackoverflow/stacksample), processed with
 
 ```
-unzip -p Answers(Questions).csv.zip | ./dataset | sed  '/^$/d' | gzip >> Dataset.txt.gz
+unzip -p Answers(Questions).csv.zip | ./dataset | sed -r -e '/^$/d' -e '/\x03/ {N; s/\x03\s*\n/\x03/g}' | gzip >> Dataset.txt.gz
 ```
 
 Baked model

@@ -301,7 +301,7 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
                         steps_per_epoch=len(train_feeder),
                         epochs=args.epochs,
                         class_weight=weights,
-                        callbacks=[tensorboard, checkpoint, Shuffler(), Presenter(), LRPrinter()],
+                        callbacks=[tensorboard, checkpoint, Shuffler(), LRPrinter()],
                         use_multiprocessing=True)
 
 
