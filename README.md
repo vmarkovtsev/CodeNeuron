@@ -54,11 +54,14 @@ cat sample.txt | python3 run_model.py -m model_LSTM_600_0.9862.pb
 You should see:
 
 ```
-Here is my Go code, it is awesome and easy to read:
+Here is my Python code, it is awesome and easy to read:
+<code>def main():
+<code>    print("Hello, world!")
+</code>Please say what you think about it. Mad skills. Here is another one,
 <code>func main() {
-  println(Hello, world!)
-</code>}
-</code>Please say what you think about it. IMHO, it is the best code I have ever written.
+  println("Hello, world!")
+}
+</code>As you see, I know Go too. Some more text to provide enough context.
 ```
 
 Visualize the trained model:

@@ -1,5 +1,8 @@
-Here is my Go code, it is awesome and easy to read:
+Here is my Python code, it is awesome and easy to read:
+def main():
+    print("Hello, world!")
+Please say what you think about it. Mad skills. Here is another one,
 func main() {
   println("Hello, world!")
 }
-Please say what you think about it. IMHO, it is the best code I have ever written.
+As you see, I know Go too. Some more text to provide enough context.
