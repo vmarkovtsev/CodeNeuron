@@ -22,7 +22,7 @@ only 3 classes: code block begins, code block ends and no-op.
 
 ![Code Neuron Validation](doc/code_neuron_validation.png)
 
-It is fast to train (20 minutes instead of 6 hours) and reaches **~99.1% validation accuracy**.
+It is much faster to train and it reaches **~99.2% validation accuracy**.
 
 Training set
 ------------
@@ -36,7 +36,7 @@ unzip -p Answers(Questions).csv.zip | ./dataset | sed -r -e '/^$/d' -e '/\x03/ {
 Baked model
 -----------
 
-[model_LSTM_512_0.9913.pb](model_LSTM_512_0.9913.pb) - reaches 99.1% accuracy on validation.
+[model_LSTM_600_0.9919.pb](model_LSTM_600_0.9919.pb) - reaches 99.2% accuracy on validation.
 Tensorflow graph format.
 
 Pretraining was performed with 20% validation on first 8000000 bytes of the uncompressed questions.
@@ -47,7 +47,7 @@ to experiment.
 Try to run it:
 
 ```
-cat sample.txt | python3 run_model.py -m model_LSTM_512_0.9913.pb
+cat sample.txt | python3 run_model.py -m model_LSTM_600_0.9919.pb
 ```
 
 You should see:
@@ -56,14 +56,14 @@ You should see:
 Here is my Go code, it is awesome and easy to read:
 <code>func main() {
   println(Hello, world!)
-}
+</code>}
 </code>Please say what you think about it. In my opinion, it is the best code I have ever written.
 ```
 
 Visualize the trained model:
 
 ```
-python3 model2tb.py --model-dir model_LSTM_512_0.9913.pb --log-dir tb_logs
+python3 model2tb.py --model-dir model_LSTM_600_0.9919.pb --log-dir tb_logs
 tensorboard --logdir=tb_logs
 ```
 
