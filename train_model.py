@@ -18,7 +18,7 @@ from chars import CHARS, WEIGHTS, OOV_WEIGHT
 def setup():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-i", "--input", help="Path to the train dataset.")
-    parser.add_argument("-l", "--layers", default="512,256",
+    parser.add_argument("-l", "--layers", default="600",
                         help="Layers configuration: number of neurons on each layer separated by "
                              "comma.")
     parser.add_argument("-m", "--length", type=int, default=100, help="RNN sequence length.")
