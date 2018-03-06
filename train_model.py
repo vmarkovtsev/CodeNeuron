@@ -333,7 +333,10 @@ def bake_code_neuron_dataset(texts: List[str], negative_ratio: float, length: in
 
     def gen_sample(x: int, text: str):
         before = numpy.zeros(length, dtype=numpy.uint8)
-        i = x - 1
+        if text[x] in ("\x02", "\x03"):
+            i = x - 1
+        else:
+            i = x
         j = length - 1
         while i >= 0 and j >= 0:
             if text[i] not in ("\x02", "\x03"):
@@ -371,12 +374,14 @@ def bake_code_neuron_dataset(texts: List[str], negative_ratio: float, length: in
         delta = len(text) - length
         while pos + delta > choices[ni]:
             x = choices[ni] - pos + length // 2
-            while x < len(text) and text[x] in ("\x02", "\x03"):
+            while x < len(text) - 1 and (
+                    text[x] in ("\x02", "\x03") or text[x + 1] in ("\x02", "\x03")):
                 x += 1
-            if x == len(text):
-                while x >= 0 and text[x] in ("\x02", "\x03"):
+            if x == len(text) - 1:
+                while x >= 0 and (text[x] in ("\x02", "\x03") or text[x + 1] in ("\x02", "\x03")):
                     x -= 1
                 assert x >= 0
+            # x and x+1 are not code boundaries => we look at the middle
             negative.append(gen_sample(x, text))
             ni += 1
             if ni == len(choices):
