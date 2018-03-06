@@ -42,8 +42,6 @@ def setup():
     parser.add_argument("--decay", default=0.00002, type=float, help="Learning rate decay.")
     parser.add_argument("--enable-weights", action="store_true",
                         help="Weight character classes.")
-    parser.add_argument("--enable-norm", action="store_true",
-                        help="Enable batch normalization before the dense layer.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
     parser.add_argument("--devices", default="0,1", help="Devices to use. Empty means CPU.")
     parser.add_argument("--tensorboard", default="tb_logs",
@@ -149,10 +147,6 @@ def create_char_rnn_model(args: argparse.Namespace, classes: int,
     with tf.device(dev1):
         merged = layers.Concatenate()([forward_output, reverse_output])
         log.info("Added %s", merged)
-    if args.enable_norm:
-        merged = layers.BatchNormalization()(merged)
-        log.info("Added %s", merged)
-    with tf.device(dev1):
         dense = layers.Dense(classes, activation="softmax")
         decision = dense(merged)
         log.info("Added %s", decision)
@@ -288,11 +282,11 @@ def train_char_rnn_model(model, dataset: List[str], args: argparse.Namespace):
 
     class LRPrinter(callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
+            from keras import backend
             lr = self.model.optimizer.lr
             decay = self.model.optimizer.decay
             iterations = self.model.optimizer.iterations
-            lr_with_decay = lr / (1. + decay * K.cast(iterations, K.dtype(decay)))
-            from keras import backend
+            lr_with_decay = lr / (1. + decay * backend.cast(iterations, backend.dtype(decay)))
             print("Learning rate:", backend.eval(lr_with_decay))
 
     model.fit_generator(generator=train_feeder,
