@@ -19,6 +19,8 @@ I set 512 LSTM neurons and reach 89% validation accuracy over 200 most frequent 
 
 The second stage is training the same network but with the different dense layer which predicts
 only 3 classes: code block begins, code block ends and no-op.
+The prediction scheme changes: now we look at the adjacent chars and decide if there is a code boundary
+between them or not.
 
 ![Code Neuron Validation](doc/code_neuron_validation.png)
 
@@ -69,6 +71,14 @@ Visualize the trained model:
 ```
 python3 model2tb.py --model-dir model_LSTM_600_0.9917.pb --log-dir tb_logs
 tensorboard --logdir=tb_logs
+```
+
+Go inference
+------------
+
+```
+go build -o infer infer.go
+cat sample.txt | ./infer -m model_LSTM_600_0.9917.pb
 ```
 
 License
