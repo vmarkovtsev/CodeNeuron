@@ -312,7 +312,10 @@ func readInput(batchSize, sequenceLength int) ([]rune, []*tf.Tensor, []*tf.Tenso
 
 func main() {
 	graph := tf.NewGraph()
-	graph.Import(setup(), "")
+	err := graph.Import(setup(), "")
+	if err != nil {
+	    log.Fatalf("Importing the model: %v", err)
+	}
 	input1 := graph.Operation("input_1_1").Output(0)
 	input2 := graph.Operation("input_2_1").Output(0)
 	output := graph.Operation("output").Output(0)
@@ -327,6 +330,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create a Tensorflow session: %v", err)
 	}
+	defer session.Close()
 	pos := 0
 	print(string(text[:sequenceLength / 2]))
 	for i := range tensors1 {
