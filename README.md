@@ -38,8 +38,8 @@ unzip -p Answers(Questions).csv.zip | ./dataset | sed -r -e '/^$/d' -e '/\x03/ {
 Baked model
 -----------
 
-[model_LSTM_600_0.9917.pb](model_LSTM_600_0.9917.pb) - reaches 99.2% accuracy on validation.
-Tensorflow graph format.
+[model_LSTM_600_0.9924.pb](model_LSTM_600_0.9924.pb) - reaches 99.2% accuracy on validation. The model
+in Tensorflow "GraphDef" protobuf format.
 
 Pretraining was performed with 20% validation on the first 8000000 bytes of the uncompressed questions.
 Training was performed with 20% validation and 90% negative samples on the first 256000000 bytes of
@@ -50,7 +50,7 @@ to experiment.
 Try to run it:
 
 ```
-cat sample.txt | python3 run_model.py -m model_LSTM_600_0.9917.pb
+cat sample.txt | python3 run_model.py -m model_LSTM_600_0.9924.pb
 ```
 
 You should see:
@@ -69,7 +69,7 @@ Here is my Python code, it is awesome and easy to read:
 Visualize the trained model:
 
 ```
-python3 model2tb.py --model-dir model_LSTM_600_0.9917.pb --log-dir tb_logs
+python3 model2tb.py --model-dir model_LSTM_600_0.9924.pb --log-dir tb_logs
 tensorboard --logdir=tb_logs
 ```
 
@@ -78,7 +78,7 @@ Go inference
 
 ```
 go build -o infer infer.go
-cat sample.txt | ./infer -m model_LSTM_600_0.9917.pb
+cat sample.txt | ./infer -m model_LSTM_600_0.9924.pb
 ```
 
 License
