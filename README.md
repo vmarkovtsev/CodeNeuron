@@ -77,8 +77,25 @@ Go inference
 ------------
 
 ```
-go build -o infer infer.go
-cat sample.txt | ./infer -m model_LSTM_600_0.9924.pb
+go get gopkg.in/vmarkovtsev/CodeNeuron.v1/...
+cat sample.txt | $(go env GOPATH)/bin/codetect
+```
+
+API:
+
+```go
+import "gopkg.in/vmarkovtsev/CodeNeuron.v1"
+
+func main() {
+  textBytes, _ := ioutil.ReadFile("sample.txt")
+  result, _ := codetect.Run(string(textBytes))
+}
+```
+
+#### Updating the model
+
+```
+go-bindata -nomemcopy -nometadata -pkg assets -o assets/bindata.go  model.pb
 ```
 
 License
