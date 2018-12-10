@@ -87,8 +87,9 @@ API:
 import "gopkg.in/vmarkovtsev/CodeNeuron.v1"
 
 func main() {
-  textBytes, _ := ioutil.ReadFile("sample.txt")
-  result, _ := codetect.Run(string(textBytes))
+  session, _ := codetect.OpenSession()
+  textBytes, _ := ioutil.ReadFile("test.txt")
+  result, _ := codetect.Run(string(textBytes), session)
 }
 ```
 
